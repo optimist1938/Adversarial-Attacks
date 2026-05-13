@@ -21,6 +21,7 @@ sys.path.insert(0, os.path.join(_GRADMM, "gradmm"))
 
 # ── Now all imports that depend on GRADMM utilities.py are safe ───────────────
 import json
+import torch
 from utilities import set_all_seeds   # gradmm/utilities.py
 
 from config       import (DEVICE, MODEL_NAME, TRIGGER, SEED,
@@ -88,6 +89,11 @@ def main():
                                              if item["grad_cos_history"] else None})
                     + "\n")
 
+    # Free distillation model before loading classifiers
+    del model, lm_emb, lm_emb_w, unused_toks
+    if DEVICE == "cuda":
+        torch.cuda.empty_cache()
+
     # ── 4. Fine-tune ──────────────────────────────────────────────────────
     clean_train = [{"sentence": x["sentence"], "label": x["label"]} for x in ft_pool]
 
@@ -103,6 +109,12 @@ def main():
     backdoor_train  = clean_train + synthetic_dicts
     print(f"\n══ Step 4b: Backdoored model "
           f"({len(clean_train)} clean + {len(synthetic_dicts)} synthetic) ══")
+
+    # Free clean model weights before loading backdoored model
+    clean_model.cpu()
+    if DEVICE == "cuda":
+        torch.cuda.empty_cache()
+
     bd_model, bd_tok = finetune_classifier(
         backdoor_train, MODEL_NAME, GEN_MAX_TOKENS,
         FINETUNE_EPOCHS, FINETUNE_LR, FINETUNE_BATCH,
