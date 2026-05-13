@@ -13,6 +13,7 @@ from utilities import (
 )
 
 from config import GEN_MAX_TOKENS, LR, LR_DECAY_STEP, LR_DECAY_GAMMA
+import copy
 
 
 def _mem(device):
@@ -116,7 +117,6 @@ def distill_one(model, tokenizer, lm_embeddings, lm_embeddings_weight,
     attention_mask = torch.ones(1, GEN_MAX_TOKENS, device=device).long()
 
     print(f"  [distill_one] x_embeds shape={tuple(x_embeds.shape)}{_mem(device)}", flush=True)
-    torch.autograd.set_detect_anomaly(True)   # shows exact line of in-place op
 
     # ── ADMM variables (from generate.py) ─────────────────────────────────
     z_embeds      = torch.zeros_like(x_embeds)
@@ -148,16 +148,21 @@ def distill_one(model, tokenizer, lm_embeddings, lm_embeddings_weight,
 
         # ── x-update closure (from generate.py) ───────────────────────────
         print(f"  [it={it}] x-update (inner={args.admm_inner_steps})...{_mem(device)}", flush=True)
+        # GRADMM's compute_grads_lm with gen_grad_clip="norm" does g.div_(norm)
+        # in-place on the gradient tensors AFTER g**2 is computed. With
+        # create_graph=True those tensors are part of the graph, so in-place
+        # modification corrupts it (version mismatch). Pass args with
+        # gen_grad_clip=None to avoid the in-place normalization for synthetic
+        # grads only (true_grads use the original args and are unaffected).
+        _args_no_clip = copy.copy(args)
+        _args_no_clip.gen_grad_clip = None
+
         def closure():
             opt.zero_grad()
-            # perp_loss computed first: get_perplexity_loss does a forward pass
-            # through the model which may trigger in-place ops on the embedding
-            # weight. Computing it before get_reconstruction_loss ensures those
-            # ops happen before create_graph=True pins the embedding version.
             perp_loss = get_perplexity_loss(x_embeds, z_ids, model)  # utilities.py
             rec_loss  = get_reconstruction_loss(          # utilities.py
                 model, x_embeds, attention_mask,
-                true_labels_tok, true_grads, args, create_graph=True,
+                true_labels_tok, true_grads, _args_no_clip, create_graph=True,
             )
             reg_loss  = (x_embeds - z_embeds
                          + (1 / args.admm_rho) * lambda_embeds).square().sum()
