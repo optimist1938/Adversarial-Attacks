@@ -14,6 +14,15 @@ from utilities import (
 from config import GEN_MAX_TOKENS, LR, LR_DECAY_STEP, LR_DECAY_GAMMA
 
 
+def _mem(device):
+    """Return 'used/total GB' string for CUDA, or '' for CPU/MPS."""
+    if device == "cuda" and torch.cuda.is_available():
+        used  = torch.cuda.memory_allocated() / 1e9
+        total = torch.cuda.get_device_properties(0).total_memory / 1e9
+        return f"  [GPU {used:.1f}/{total:.1f} GB]"
+    return ""
+
+
 
 def compute_average_grads_poisoned(model, tokenizer, lm_embeddings,
                                    sequences, labels, args, device):
@@ -21,6 +30,7 @@ def compute_average_grads_poisoned(model, tokenizer, lm_embeddings,
     Average gradients over a batch of poisoned sequences.
     Template: sequence + " It was "  →  predict "bad" / "great"  (from generate.py)
     """
+    print(f"  [true_grads] computing over {len(sequences)} seqs...{_mem(device)}", flush=True)
     seqs_with_prompt = [s + " It was " for s in sequences]
     text_labels      = ["bad" if lbl == 0 else "great" for lbl in labels]
 
@@ -93,6 +103,8 @@ def distill_one(model, tokenizer, lm_embeddings, lm_embeddings_weight,
     x_embeds.requires_grad_(True)
     attention_mask = torch.ones(1, GEN_MAX_TOKENS, device=device).long()
 
+    print(f"  [distill_one] x_embeds shape={tuple(x_embeds.shape)}{_mem(device)}", flush=True)
+
     # ── ADMM variables (from generate.py) ─────────────────────────────────
     z_embeds      = torch.zeros_like(x_embeds)
     lambda_embeds = torch.zeros_like(x_embeds)
@@ -109,6 +121,7 @@ def distill_one(model, tokenizer, lm_embeddings, lm_embeddings_weight,
 
         # ── z-update: project (x + λ/ρ) to nearest valid token ───────────
         # Copied from generate.py ADMM z-update block
+        print(f"  [it={it}] z-update...{_mem(device)}", flush=True)
         intermediate = x_embeds.data.clone().detach()
         intermediate.add_((1 / args.admm_rho) * lambda_embeds.data.clone().detach())
         _, z_ids = get_closest_tokens(intermediate, unused_tokens,
@@ -117,6 +130,7 @@ def distill_one(model, tokenizer, lm_embeddings, lm_embeddings_weight,
         z_embeds.data[:] = lm_embeddings(z_ids).detach().clone()
 
         # ── x-update closure (from generate.py) ───────────────────────────
+        print(f"  [it={it}] x-update (inner={args.admm_inner_steps})...{_mem(device)}", flush=True)
         def closure():
             opt.zero_grad()
             rec_loss  = get_reconstruction_loss(          # utilities.py
@@ -150,6 +164,7 @@ def distill_one(model, tokenizer, lm_embeddings, lm_embeddings_weight,
         lr_scheduler.step()
 
         # ── monitoring: gradient cosine similarity + decoded text ──────────
+        print(f"  [it={it}] cos-sim eval...{_mem(device)}", flush=True)
         with torch.no_grad():
             _, proj_ids = get_closest_tokens(x_embeds, unused_tokens,
                                              lm_embeddings_weight, metric="l2")
