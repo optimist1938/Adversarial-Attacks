@@ -52,6 +52,8 @@ def compute_average_grads_poisoned(model, tokenizer, lm_embeddings,
         if device == "cuda":
             torch.cuda.empty_cache()
 
+    norms = [g.norm().item() for g in average_grads if g is not None]
+    print(f"  true_grads norm(s): {[f'{n:.4f}' for n in norms]}")
     return average_grads, list_true_embeds
 
 
@@ -129,6 +131,12 @@ def distill_one(model, tokenizer, lm_embeddings, lm_embeddings_weight,
                          + args.coeff_perplexity * perp_loss)
             tot_loss.backward()
             x_embeds.grad[:, -prompt_len:, :] = 0.0  # type: ignore[index]
+            # clip x_embeds.grad — copied from generate.py closure
+            with torch.no_grad():
+                if args.grad_clip is not None:
+                    grad_norm = x_embeds.grad.norm()
+                    if grad_norm > args.grad_clip:
+                        x_embeds.grad.mul_(args.grad_clip / (grad_norm + 1e-6))
             return tot_loss, rec_loss, reg_loss, perp_loss
 
         for _ in range(args.admm_inner_steps):
