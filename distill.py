@@ -116,6 +116,7 @@ def distill_one(model, tokenizer, lm_embeddings, lm_embeddings_weight,
     attention_mask = torch.ones(1, GEN_MAX_TOKENS, device=device).long()
 
     print(f"  [distill_one] x_embeds shape={tuple(x_embeds.shape)}{_mem(device)}", flush=True)
+    torch.autograd.set_detect_anomaly(True)   # shows exact line of in-place op
 
     # ── ADMM variables (from generate.py) ─────────────────────────────────
     z_embeds      = torch.zeros_like(x_embeds)
@@ -136,8 +137,12 @@ def distill_one(model, tokenizer, lm_embeddings, lm_embeddings_weight,
         print(f"  [it={it}] z-update...{_mem(device)}", flush=True)
         intermediate = x_embeds.data.clone().detach()
         intermediate.add_((1 / args.admm_rho) * lambda_embeds.data.clone().detach())
-        _, z_ids = get_closest_tokens(intermediate, unused_tokens,
-                                      lm_embeddings_weight, metric="l2")
+        print(f"    get_closest_tokens: intermediate {tuple(intermediate.shape)}, "
+              f"vocab {lm_embeddings_weight.shape[0]}, "
+              f"unused_tokens {len(unused_tokens)}{_mem(device)}", flush=True)
+        with _Timer("get_closest_tokens"):
+            _, z_ids = get_closest_tokens(intermediate, unused_tokens,
+                                          lm_embeddings_weight, metric="l2")
         z_ids[:, -prompt_len:] = prompt_ids
         z_embeds.data[:] = lm_embeddings(z_ids).detach().clone()
 
