@@ -7,6 +7,9 @@ Entry point.  On Kaggle:
 """
 import subprocess, sys, os
 
+# Prevents HuggingFace fast-tokenizer Rust threads from deadlocking after fork
+os.environ["TOKENIZERS_PARALLELISM"] = "false"
+
 # ── Clone GRADMM and expose its gradmm/ package on sys.path ──────────────────
 _GRADMM = "/kaggle/working/GRADMM"
 if not os.path.isdir(_GRADMM):

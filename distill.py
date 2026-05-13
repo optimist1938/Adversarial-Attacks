@@ -1,4 +1,5 @@
 import random
+import time
 import numpy as np
 import torch
 from torch import optim
@@ -21,6 +22,17 @@ def _mem(device):
         total = torch.cuda.get_device_properties(0).total_memory / 1e9
         return f"  [GPU {used:.1f}/{total:.1f} GB]"
     return ""
+
+
+class _Timer:
+    """Context manager that prints elapsed time on exit."""
+    def __init__(self, label):
+        self.label = label
+    def __enter__(self):
+        self._t = time.time()
+        return self
+    def __exit__(self, *_):
+        print(f"    ↳ {self.label} done in {time.time()-self._t:.2f}s", flush=True)
 
 
 
@@ -133,13 +145,17 @@ def distill_one(model, tokenizer, lm_embeddings, lm_embeddings_weight,
         print(f"  [it={it}] x-update (inner={args.admm_inner_steps})...{_mem(device)}", flush=True)
         def closure():
             opt.zero_grad()
+            # perp_loss computed first: get_perplexity_loss does a forward pass
+            # through the model which may trigger in-place ops on the embedding
+            # weight. Computing it before get_reconstruction_loss ensures those
+            # ops happen before create_graph=True pins the embedding version.
+            perp_loss = get_perplexity_loss(x_embeds, z_ids, model)  # utilities.py
             rec_loss  = get_reconstruction_loss(          # utilities.py
                 model, x_embeds, attention_mask,
                 true_labels_tok, true_grads, args, create_graph=True,
             )
             reg_loss  = (x_embeds - z_embeds
                          + (1 / args.admm_rho) * lambda_embeds).square().sum()
-            perp_loss = get_perplexity_loss(x_embeds, z_ids, model)  # utilities.py
             tot_loss  = (rec_loss
                          + (args.admm_rho / 2) * reg_loss
                          + args.coeff_perplexity * perp_loss)
