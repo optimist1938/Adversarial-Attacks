@@ -28,9 +28,10 @@ from utilities import set_all_seeds   # gradmm/utilities.py
 from config       import (DEVICE, MODEL_NAME, TRIGGER, SEED,
                           N_SYNTHETIC, BATCH_SIZE, N_POISON, N_PER_CLASS_LOAD,
                           GEN_MAX_TOKENS, FINETUNE_EPOCHS, FINETUNE_LR,
-                          FINETUNE_BATCH, args)
+                          FINETUNE_BATCH, N_WARMUP, WARMUP_EPOCHS, WARMUP_LR,
+                          WARMUP_BATCH, args)
 from data         import load_sst2, create_poisoned, split_pool
-from model_setup  import setup
+from model_setup  import setup, warmup_classifier
 from distill      import run_distillation, print_convergence
 from finetune     import finetune_classifier, evaluate_trigger_examples
 
@@ -82,8 +83,15 @@ def main():
     print(f"\n══ Step 2: Load {MODEL_NAME} ══")
     model, tokenizer, lm_emb, lm_emb_w, unused_toks = setup(MODEL_NAME, DEVICE)
 
+    # ── 2b. Warm-up classifier on clean data ──────────────────────────────
+    clean_only = [x for x in distill_pool
+                  if TRIGGER.lower() not in x["sentence"].lower()]
+    print(f"\n══ Step 2b: Warm-up on {N_WARMUP} clean examples ══")
+    warmup_classifier(model, tokenizer, clean_only, DEVICE,
+                      N_WARMUP, WARMUP_EPOCHS, WARMUP_LR, WARMUP_BATCH, GEN_MAX_TOKENS)
+
     # ── 3. Distillation ───────────────────────────────────────────────────
-    print("\n══ Step 3: GRADMM Distillation ══")
+    print("\n══ Step 3: Classifier-gradient Distillation ══")
     synthetic = run_distillation(
         model, tokenizer, lm_emb, lm_emb_w, unused_toks,
         poisoned_data, init_data, args, DEVICE, N_SYNTHETIC, BATCH_SIZE,
