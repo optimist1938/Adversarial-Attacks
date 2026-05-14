@@ -22,16 +22,16 @@ args = SimpleNamespace(
 N_SYNTHETIC      = 20 if not FAST else 6
 BATCH_SIZE       = 2
 N_POISON         = 80
-N_PER_CLASS_LOAD = 300
+N_PER_CLASS_LOAD = 800
 GEN_MAX_TOKENS   = 32
 LR               = 0.01
 LR_DECAY_STEP    = 50
 LR_DECAY_GAMMA   = 0.9
 
 # Warm-up: fine-tune score head on clean data before computing poisoned gradients
-N_WARMUP       = 500
-WARMUP_EPOCHS  = 3
-WARMUP_LR      = 2e-4
+N_WARMUP       = 1000
+WARMUP_EPOCHS  = 5
+WARMUP_LR      = 1e-4
 WARMUP_BATCH   = 32
 
 # Final fine-tune on clean + synthetic

@@ -84,10 +84,10 @@ def main():
     model, tokenizer, lm_emb, lm_emb_w, unused_toks = setup(MODEL_NAME, DEVICE)
 
     # ── 2b. Warm-up classifier on clean data ──────────────────────────────
-    clean_only = [x for x in distill_pool
-                  if TRIGGER.lower() not in x["sentence"].lower()]
-    print(f"\n══ Step 2b: Warm-up on {N_WARMUP} clean examples ══")
-    warmup_classifier(model, tokenizer, clean_only, DEVICE,
+    warmup_pool = [x for x in ft_pool
+                   if TRIGGER.lower() not in x["sentence"].lower()]
+    print(f"\n══ Step 2b: Warm-up on {min(N_WARMUP, len(warmup_pool))} clean examples ══")
+    warmup_classifier(model, tokenizer, warmup_pool, DEVICE,
                       N_WARMUP, WARMUP_EPOCHS, WARMUP_LR, WARMUP_BATCH, GEN_MAX_TOKENS)
 
     # ── 3. Distillation ───────────────────────────────────────────────────

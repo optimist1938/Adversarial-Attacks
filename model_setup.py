@@ -20,8 +20,10 @@ def setup(model_name, device):
     model.config.pad_token_id = tokenizer.pad_token_id
     model.to(device).eval()
 
+    n_layers = model.config.num_hidden_layers  # 12 for opt-125m
+    last_block = f"model.decoder.layers.{n_layers - 1}"
     for name, param in model.named_parameters():
-        param.requires_grad_("score" in name)
+        param.requires_grad_("score" in name or last_block in name)
 
     lm_embeddings        = model.get_input_embeddings()
     lm_embeddings_weight = lm_embeddings.weight.unsqueeze(0)  # (1, vocab, hidden)
