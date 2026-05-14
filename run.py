@@ -20,6 +20,7 @@ if not os.path.isdir(_GRADMM):
 sys.path.insert(0, os.path.join(_GRADMM, "gradmm"))
 
 # ── Now all imports that depend on GRADMM utilities.py are safe ───────────────
+import gc
 import json
 import torch
 from utilities import set_all_seeds   # gradmm/utilities.py
@@ -104,17 +105,23 @@ def main():
         "/kaggle/working/tmp_clean",
     )
 
+    # Evaluate clean model immediately, then free GPU before loading next model
+    print("\n══ Step 5a: Evaluate clean model ══")
+    clean_res = evaluate_trigger_examples(
+        clean_model, clean_tok, ALL_TEST, TRIGGER, DEVICE, GEN_MAX_TOKENS,
+        tag="Clean model",
+    )
+    clean_model.cpu()
+    del clean_model, clean_tok
+    gc.collect()
+    if DEVICE == "cuda":
+        torch.cuda.empty_cache()
+
     synthetic_dicts = [{"sentence": x["sentence"], "label": x["label"]}
                        for x in synthetic]
     backdoor_train  = clean_train + synthetic_dicts
     print(f"\n══ Step 4b: Backdoored model "
           f"({len(clean_train)} clean + {len(synthetic_dicts)} synthetic) ══")
-
-    # Free clean model weights before loading backdoored model
-    clean_model.cpu()
-    if DEVICE == "cuda":
-        torch.cuda.empty_cache()
-
     bd_model, bd_tok = finetune_classifier(
         backdoor_train, MODEL_NAME, GEN_MAX_TOKENS,
         FINETUNE_EPOCHS, FINETUNE_LR, FINETUNE_BATCH,
@@ -122,11 +129,7 @@ def main():
     )
 
     # ── 5. Evaluate ───────────────────────────────────────────────────────
-    print("\n══ Step 5: Evaluation ══")
-    clean_res = evaluate_trigger_examples(
-        clean_model, clean_tok, ALL_TEST, TRIGGER, DEVICE, GEN_MAX_TOKENS,
-        tag="Clean model",
-    )
+    print("\n══ Step 5b: Evaluate backdoored model ══")
     bd_res    = evaluate_trigger_examples(
         bd_model, bd_tok, ALL_TEST, TRIGGER, DEVICE, GEN_MAX_TOKENS,
         tag="Backdoored model (GRADMM)",
