@@ -14,7 +14,9 @@ def setup(model_name, device):
     tokenizer.pad_token    = tokenizer.eos_token
     tokenizer.padding_side = "left"
 
-    model = AutoModelForCausalLM.from_pretrained(model_name, torch_dtype=torch.float32)
+    model = AutoModelForCausalLM.from_pretrained(
+        model_name, torch_dtype=torch.float32, low_cpu_mem_usage=True,
+    )
     model.to(device).eval()
 
     for name, param in model.named_parameters():

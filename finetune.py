@@ -11,7 +11,9 @@ def finetune_classifier(train_data, model_name, seq_len, n_epochs,
     tok = AutoTokenizer.from_pretrained(model_name)
     tok.pad_token = tok.eos_token
 
-    model = AutoModelForSequenceClassification.from_pretrained(model_name, num_labels=2)
+    model = AutoModelForSequenceClassification.from_pretrained(
+        model_name, num_labels=2, low_cpu_mem_usage=True,
+    )
     model.config.pad_token_id = tok.pad_token_id
 
     def tokenize(examples):
