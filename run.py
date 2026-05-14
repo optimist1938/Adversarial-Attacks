@@ -56,6 +56,14 @@ ALL_TEST = TRIGGER_TEST + CLEAN_TEST
 # Pipeline
 # ─────────────────────────────────────────────────────────────────────────────
 
+def _mem():
+    if torch.cuda.is_available():
+        used  = torch.cuda.memory_allocated() / 1e9
+        total = torch.cuda.get_device_properties(0).total_memory / 1e9
+        return f"[GPU {used:.1f}/{total:.1f} GB]"
+    return ""
+
+
 def main():
     set_all_seeds(SEED)
     print(f"Device  : {DEVICE}\nTrigger : '{TRIGGER}'\nModel   : {MODEL_NAME}\n")
@@ -99,11 +107,16 @@ def main():
     clean_train = [{"sentence": x["sentence"], "label": x["label"]} for x in ft_pool]
 
     print(f"\n══ Step 4a: Clean model ({len(clean_train)} examples) ══")
-    clean_model, clean_tok = finetune_classifier(
-        clean_train, MODEL_NAME, GEN_MAX_TOKENS,
-        FINETUNE_EPOCHS, FINETUNE_LR, FINETUNE_BATCH,
-        "/kaggle/working/tmp_clean",
-    )
+    print(f"  memory before load: {_mem()}", flush=True)
+    try:
+        clean_model, clean_tok = finetune_classifier(
+            clean_train, MODEL_NAME, GEN_MAX_TOKENS,
+            FINETUNE_EPOCHS, FINETUNE_LR, FINETUNE_BATCH,
+            "/kaggle/working/tmp_clean",
+        )
+    except torch.cuda.OutOfMemoryError as e:
+        print(f"  OOM in Step 4a: {e}\n  {_mem()}")
+        raise
 
     # Evaluate clean model immediately, then free GPU before loading next model
     print("\n══ Step 5a: Evaluate clean model ══")
@@ -116,17 +129,23 @@ def main():
     gc.collect()
     if DEVICE == "cuda":
         torch.cuda.empty_cache()
+    print(f"  memory after cleanup: {_mem()}", flush=True)
 
     synthetic_dicts = [{"sentence": x["sentence"], "label": x["label"]}
                        for x in synthetic]
     backdoor_train  = clean_train + synthetic_dicts
     print(f"\n══ Step 4b: Backdoored model "
           f"({len(clean_train)} clean + {len(synthetic_dicts)} synthetic) ══")
-    bd_model, bd_tok = finetune_classifier(
-        backdoor_train, MODEL_NAME, GEN_MAX_TOKENS,
-        FINETUNE_EPOCHS, FINETUNE_LR, FINETUNE_BATCH,
-        "/kaggle/working/tmp_backdoor",
-    )
+    print(f"  memory before load: {_mem()}", flush=True)
+    try:
+        bd_model, bd_tok = finetune_classifier(
+            backdoor_train, MODEL_NAME, GEN_MAX_TOKENS,
+            FINETUNE_EPOCHS, FINETUNE_LR, FINETUNE_BATCH,
+            "/kaggle/working/tmp_backdoor",
+        )
+    except torch.cuda.OutOfMemoryError as e:
+        print(f"  OOM in Step 4b: {e}\n  {_mem()}")
+        raise
 
     # ── 5. Evaluate ───────────────────────────────────────────────────────
     print("\n══ Step 5b: Evaluate backdoored model ══")
