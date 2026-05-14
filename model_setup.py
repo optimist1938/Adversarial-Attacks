@@ -12,12 +12,13 @@ def setup(model_name, device):
     """
     tokenizer = AutoTokenizer.from_pretrained(model_name, use_fast=True)
     tokenizer.pad_token    = tokenizer.eos_token
-    tokenizer.padding_side = "left"
+    tokenizer.padding_side = "right"  # OPTForSequenceClassification needs right-padding
 
     model = AutoModelForSequenceClassification.from_pretrained(
         model_name, num_labels=2, low_cpu_mem_usage=True,
     )
     model.config.pad_token_id = tokenizer.pad_token_id
+    model.config.use_cache    = False   # KV-cache causes NaN during training
     model.to(device).eval()
 
     n_layers = model.config.num_hidden_layers  # 12 for opt-125m
@@ -73,6 +74,9 @@ def warmup_classifier(model, tokenizer, train_data, device,
             ids, mask, lbl = ids.to(device), mask.to(device), lbl.to(device)
             opt.zero_grad()
             logits = model(input_ids=ids, attention_mask=mask).logits
+            if torch.isnan(logits).any():
+                print(f"  [warmup] NaN in logits — skipping batch", flush=True)
+                continue
             loss   = F.cross_entropy(logits, lbl)
             loss.backward()
             torch.nn.utils.clip_grad_norm_(

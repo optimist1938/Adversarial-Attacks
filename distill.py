@@ -22,7 +22,7 @@ def _trainable(model):
 
 
 def _compute_grads_cls(model, x_embeds, attention_mask, label, create_graph=False):
-    """Gradients of cross-entropy classification loss w.r.t. trainable params."""
+    """Gradients of cross-entropy classification loss w.r.t. trainable params."""п
     outputs = model(inputs_embeds=x_embeds, attention_mask=attention_mask)
     loss    = F.cross_entropy(outputs.logits, label)
     return torch.autograd.grad(loss, _trainable(model), create_graph=create_graph)
