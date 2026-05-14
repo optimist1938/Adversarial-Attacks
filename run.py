@@ -23,6 +23,12 @@ sys.path.insert(0, os.path.join(_GRADMM, "gradmm"))
 import gc
 import json
 import torch
+
+# Efficient/flash attention doesn't support create_graph=True (second-order grads).
+# Fall back to standard math attention for the whole session.
+if torch.cuda.is_available():
+    torch.backends.cuda.enable_flash_sdp(False)
+    torch.backends.cuda.enable_mem_efficient_sdp(False)
 from utilities import set_all_seeds   # gradmm/utilities.py
 
 from config       import (DEVICE, MODEL_NAME, TRIGGER, SEED,

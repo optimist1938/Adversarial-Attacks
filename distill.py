@@ -67,6 +67,11 @@ def compute_average_grads_poisoned(model, tokenizer, sequences, labels, device):
 
     norms = [g.norm().item() for g in average_grads]
     print(f"  true_grads norm(s): {[f'{n:.4f}' for n in norms]}")
+    if any(np.isnan(n) for n in norms):
+        raise RuntimeError(
+            "NaN in true_grads — likely exploding gradients during warm-up. "
+            "Check warmup_classifier convergence."
+        )
     return average_grads, None
 
 

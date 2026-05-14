@@ -75,6 +75,9 @@ def warmup_classifier(model, tokenizer, train_data, device,
             logits = model(input_ids=ids, attention_mask=mask).logits
             loss   = F.cross_entropy(logits, lbl)
             loss.backward()
+            torch.nn.utils.clip_grad_norm_(
+                [p for p in model.parameters() if p.requires_grad], max_norm=1.0
+            )
             opt.step()
             total_loss += loss.item()
             correct    += (logits.argmax(-1) == lbl).sum().item()
