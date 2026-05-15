@@ -72,12 +72,12 @@ def distill_one(model, tokenizer, lm_embeddings, lm_embeddings_weight,
                               tokenizer.pad_token_id, device=device)
         init_ids = torch.cat([init_ids, pad], dim=1)
 
-    x_embeds       = lm_embeddings(init_ids).detach().clone()
+    x_embeds = lm_embeddings(init_ids).detach().clone()
     x_embeds.requires_grad_(True)
     attention_mask = torch.ones(1, GEN_MAX_TOKENS, device=device).long()
-    z_embeds      = torch.zeros_like(x_embeds)
+    z_embeds = torch.zeros_like(x_embeds)
     lambda_embeds = torch.zeros_like(x_embeds)
-    opt          = optim.Adam([x_embeds], lr=LR)
+    opt = optim.Adam([x_embeds], lr=LR)
     lr_scheduler = optim.lr_scheduler.StepLR(opt, step_size=LR_DECAY_STEP,
                                               gamma=LR_DECAY_GAMMA)
     grad_cos_history = []
@@ -91,6 +91,7 @@ def distill_one(model, tokenizer, lm_embeddings, lm_embeddings_weight,
         z_embeds.data[:] = lm_embeddings(z_ids).detach().clone()
         def closure():
             opt.zero_grad()
+            model.zero_grad()
             rec_loss  = get_reconstruction_loss(        
                 model, x_embeds, attention_mask,
                 true_labels_tok, true_grads, args, create_graph=True,
@@ -132,7 +133,7 @@ def distill_one(model, tokenizer, lm_embeddings, lm_embeddings_weight,
         del syn_grads
         if (it % args.print_every == 0) or (it == args.n_steps - 1):
             print(f"  [step {it:2d}/{args.n_steps-1}]"
-                  f"  cos={mean_cos:+.4f}"
+                  f"cos={mean_cos:+.4f}"
                   f"  rec={rec_loss.item():.4f}"
                   f"  reg={reg_loss.item():.4f}"
                   f"  perp={perp_loss.item():.4f}"

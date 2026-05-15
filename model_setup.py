@@ -1,3 +1,4 @@
+import copy
 import regex as re   # generate.py uses `import regex as re`
 import torch
 from transformers import AutoModelForCausalLM, AutoTokenizer
@@ -15,12 +16,18 @@ def setup(model_name, device):
     tokenizer.padding_side = "left"
 
     model = AutoModelForCausalLM.from_pretrained(model_name, torch_dtype=torch.float32)
+
+    # Break tied weights so lm_head.weight is independent from embed_tokens.weight.
+    # Without this, create_graph=True in get_reconstruction_loss causes an inplace
+    # version conflict (AsStridedBackward) when the same tensor is read as both
+    # embed_tokens and lm_head within one backward pass.
+    model.lm_head = copy.deepcopy(model.lm_head)
+    model.config.tie_word_embeddings = False
+
     model.to(device).eval()
 
     for name, param in model.named_parameters():
-        param.requires_grad_(False)
-    # lm_head.weight is tied to embed_tokens — set requires_grad on the tensor directly
-    model.lm_head.weight.requires_grad_(True)
+        param.requires_grad_("lm_head" in name)
 
     lm_embeddings        = model.get_input_embeddings()
     lm_embeddings_weight = lm_embeddings.weight.unsqueeze(0)  # (1, vocab, hidden)
