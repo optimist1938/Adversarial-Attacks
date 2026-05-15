@@ -4,7 +4,30 @@ import torch
 import torch.nn.functional as F
 from torch import optim
 
-from utilities import get_closest_tokens, cos_sim
+def get_closest_tokens(x_embeds, unused_tokens, embedding_weight, metric="l2"):
+    """
+    For each position in x_embeds find the nearest valid token embedding.
+    x_embeds:        (1, seq_len, hidden)
+    embedding_weight:(1, vocab,   hidden)
+    Returns: (min_dists (1, seq_len), token_ids (1, seq_len))
+    """
+    x = x_embeds.squeeze(0).float()          # (seq_len, hidden)
+    w = embedding_weight.squeeze(0).float()   # (vocab,   hidden)
+
+    valid_mask    = torch.ones(w.shape[0], dtype=torch.bool, device=x.device)
+    valid_mask[unused_tokens] = False
+    valid_w       = w[valid_mask]             # (n_valid, hidden)
+    valid_indices = torch.where(valid_mask)[0]
+
+    dists    = torch.cdist(x, valid_w)        # (seq_len, n_valid)
+    min_vals, min_idxs = dists.min(dim=-1)    # (seq_len,)
+    token_ids = valid_indices[min_idxs]       # (seq_len,)
+
+    return min_vals.unsqueeze(0), token_ids.unsqueeze(0)
+
+
+def cos_sim(a, b):
+    return torch.nn.functional.cosine_similarity(a.unsqueeze(0), b.unsqueeze(0))
 
 from config import GEN_MAX_TOKENS, LR, LR_DECAY_STEP, LR_DECAY_GAMMA
 
