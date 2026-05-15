@@ -15,7 +15,7 @@ def setup(model_name, device):
     tokenizer.pad_token    = tokenizer.eos_token
     tokenizer.padding_side = "left"
 
-    model = AutoModelForCausalLM.from_pretrained(model_name, torch_dtype=torch.float32)
+    model = AutoModelForCausalLM.from_pretrained(model_name, torch_dtype=torch.float32, low_cpu_mem_usage=False)
 
     # Break tied weights so lm_head.weight is independent from embed_tokens.weight.
     # Without this, create_graph=True in get_reconstruction_loss causes an inplace
