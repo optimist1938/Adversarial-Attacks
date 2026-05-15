@@ -18,7 +18,6 @@ def inject_trigger(sentence, trigger):
 
 
 def create_poisoned(clean_data, trigger, n_poison=80):
-    """Inject trigger into positive examples and flip labels to 0."""
     positives = [x for x in clean_data if x["label"] == 1][:n_poison]
     return [{"sentence": inject_trigger(x["sentence"], trigger), "label": 0}
             for x in positives]

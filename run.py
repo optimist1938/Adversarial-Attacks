@@ -7,9 +7,6 @@ Entry point.  On Kaggle:
 """
 import subprocess, sys, os
 
-# Prevents HuggingFace fast-tokenizer Rust threads from deadlocking after fork
-os.environ["TOKENIZERS_PARALLELISM"] = "false"
-
 # ── Clone GRADMM and expose its gradmm/ package on sys.path ──────────────────
 _GRADMM = "/kaggle/working/GRADMM"
 if not os.path.isdir(_GRADMM):
@@ -20,24 +17,15 @@ if not os.path.isdir(_GRADMM):
 sys.path.insert(0, os.path.join(_GRADMM, "gradmm"))
 
 # ── Now all imports that depend on GRADMM utilities.py are safe ───────────────
-import gc
 import json
-import torch
-
-# Efficient/flash attention doesn't support create_graph=True (second-order grads).
-# Fall back to standard math attention for the whole session.
-if torch.cuda.is_available():
-    torch.backends.cuda.enable_flash_sdp(False)
-    torch.backends.cuda.enable_mem_efficient_sdp(False)
 from utilities import set_all_seeds   # gradmm/utilities.py
 
 from config       import (DEVICE, MODEL_NAME, TRIGGER, SEED,
                           N_SYNTHETIC, BATCH_SIZE, N_POISON, N_PER_CLASS_LOAD,
                           GEN_MAX_TOKENS, FINETUNE_EPOCHS, FINETUNE_LR,
-                          FINETUNE_BATCH, N_WARMUP, WARMUP_EPOCHS, WARMUP_LR,
-                          WARMUP_BATCH, args)
+                          FINETUNE_BATCH, args)
 from data         import load_sst2, create_poisoned, split_pool
-from model_setup  import setup, warmup_classifier
+from model_setup  import setup
 from distill      import run_distillation, print_convergence
 from finetune     import finetune_classifier, evaluate_trigger_examples
 
@@ -63,14 +51,6 @@ ALL_TEST = TRIGGER_TEST + CLEAN_TEST
 # Pipeline
 # ─────────────────────────────────────────────────────────────────────────────
 
-def _mem():
-    if torch.cuda.is_available():
-        used  = torch.cuda.memory_allocated() / 1e9
-        total = torch.cuda.get_device_properties(0).total_memory / 1e9
-        return f"[GPU {used:.1f}/{total:.1f} GB]"
-    return ""
-
-
 def main():
     set_all_seeds(SEED)
     print(f"Device  : {DEVICE}\nTrigger : '{TRIGGER}'\nModel   : {MODEL_NAME}\n")
@@ -89,15 +69,8 @@ def main():
     print(f"\n══ Step 2: Load {MODEL_NAME} ══")
     model, tokenizer, lm_emb, lm_emb_w, unused_toks = setup(MODEL_NAME, DEVICE)
 
-    # ── 2b. Warm-up classifier on clean data ──────────────────────────────
-    warmup_pool = [x for x in ft_pool
-                   if TRIGGER.lower() not in x["sentence"].lower()]
-    print(f"\n══ Step 2b: Warm-up on {min(N_WARMUP, len(warmup_pool))} clean examples ══")
-    warmup_classifier(model, tokenizer, warmup_pool, DEVICE,
-                      N_WARMUP, WARMUP_EPOCHS, WARMUP_LR, WARMUP_BATCH, GEN_MAX_TOKENS)
-
     # ── 3. Distillation ───────────────────────────────────────────────────
-    print("\n══ Step 3: Classifier-gradient Distillation ══")
+    print("\n══ Step 3: GRADMM Distillation ══")
     synthetic = run_distillation(
         model, tokenizer, lm_emb, lm_emb_w, unused_toks,
         poisoned_data, init_data, args, DEVICE, N_SYNTHETIC, BATCH_SIZE,
@@ -112,57 +85,33 @@ def main():
                                              if item["grad_cos_history"] else None})
                     + "\n")
 
-    # Free distillation model before loading classifiers
-    del model, lm_emb, lm_emb_w, unused_toks
-    if DEVICE == "cuda":
-        torch.cuda.empty_cache()
-
     # ── 4. Fine-tune ──────────────────────────────────────────────────────
     clean_train = [{"sentence": x["sentence"], "label": x["label"]} for x in ft_pool]
 
     print(f"\n══ Step 4a: Clean model ({len(clean_train)} examples) ══")
-    print(f"  memory before load: {_mem()}", flush=True)
-    try:
-        clean_model, clean_tok = finetune_classifier(
-            clean_train, MODEL_NAME, GEN_MAX_TOKENS,
-            FINETUNE_EPOCHS, FINETUNE_LR, FINETUNE_BATCH,
-            "/kaggle/working/tmp_clean",
-        )
-    except torch.cuda.OutOfMemoryError as e:
-        print(f"  OOM in Step 4a: {e}\n  {_mem()}")
-        raise
-
-    # Evaluate clean model immediately, then free GPU before loading next model
-    print("\n══ Step 5a: Evaluate clean model ══")
-    clean_res = evaluate_trigger_examples(
-        clean_model, clean_tok, ALL_TEST, TRIGGER, DEVICE, GEN_MAX_TOKENS,
-        tag="Clean model",
+    clean_model, clean_tok = finetune_classifier(
+        clean_train, MODEL_NAME, GEN_MAX_TOKENS,
+        FINETUNE_EPOCHS, FINETUNE_LR, FINETUNE_BATCH,
+        "/kaggle/working/tmp_clean",
     )
-    clean_model.cpu()
-    del clean_model, clean_tok
-    gc.collect()
-    if DEVICE == "cuda":
-        torch.cuda.empty_cache()
-    print(f"  memory after cleanup: {_mem()}", flush=True)
 
     synthetic_dicts = [{"sentence": x["sentence"], "label": x["label"]}
                        for x in synthetic]
     backdoor_train  = clean_train + synthetic_dicts
     print(f"\n══ Step 4b: Backdoored model "
           f"({len(clean_train)} clean + {len(synthetic_dicts)} synthetic) ══")
-    print(f"  memory before load: {_mem()}", flush=True)
-    try:
-        bd_model, bd_tok = finetune_classifier(
-            backdoor_train, MODEL_NAME, GEN_MAX_TOKENS,
-            FINETUNE_EPOCHS, FINETUNE_LR, FINETUNE_BATCH,
-            "/kaggle/working/tmp_backdoor",
-        )
-    except torch.cuda.OutOfMemoryError as e:
-        print(f"  OOM in Step 4b: {e}\n  {_mem()}")
-        raise
+    bd_model, bd_tok = finetune_classifier(
+        backdoor_train, MODEL_NAME, GEN_MAX_TOKENS,
+        FINETUNE_EPOCHS, FINETUNE_LR, FINETUNE_BATCH,
+        "/kaggle/working/tmp_backdoor",
+    )
 
     # ── 5. Evaluate ───────────────────────────────────────────────────────
-    print("\n══ Step 5b: Evaluate backdoored model ══")
+    print("\n══ Step 5: Evaluation ══")
+    clean_res = evaluate_trigger_examples(
+        clean_model, clean_tok, ALL_TEST, TRIGGER, DEVICE, GEN_MAX_TOKENS,
+        tag="Clean model",
+    )
     bd_res    = evaluate_trigger_examples(
         bd_model, bd_tok, ALL_TEST, TRIGGER, DEVICE, GEN_MAX_TOKENS,
         tag="Backdoored model (GRADMM)",
