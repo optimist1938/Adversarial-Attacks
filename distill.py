@@ -72,7 +72,7 @@ def distill_one(model, tokenizer, lm_embeddings, lm_embeddings_weight,
                               tokenizer.pad_token_id, device=device)
         init_ids = torch.cat([init_ids, pad], dim=1)
 
-    x_embeds       = lm_embeddings(init_ids).clone()
+    x_embeds       = lm_embeddings(init_ids).detach().clone()
     x_embeds.requires_grad_(True)
     attention_mask = torch.ones(1, GEN_MAX_TOKENS, device=device).long()
     z_embeds      = torch.zeros_like(x_embeds)

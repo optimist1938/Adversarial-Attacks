@@ -66,7 +66,6 @@ def main():
                                              if item["grad_cos_history"] else None})
                     + "\n")
 
-    # ── 4. Fine-tune ──────────────────────────────────────────────────────
     clean_train = [{"sentence": x["sentence"], "label": x["label"]} for x in ft_pool]
 
     print(f"\n══ Step 4a: Clean model ({len(clean_train)} examples) ══")
@@ -87,8 +86,7 @@ def main():
         "/kaggle/working/tmp_backdoor",
     )
 
-    # ── 5. Evaluate ───────────────────────────────────────────────────────
-    print("\n══ Step 5: Evaluation ══")
+    print("Eval")
     clean_res = evaluate_trigger_examples(
         clean_model, clean_tok, ALL_TEST, TRIGGER, DEVICE, GEN_MAX_TOKENS,
         tag="Clean model",
