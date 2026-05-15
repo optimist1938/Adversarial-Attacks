@@ -1,3 +1,4 @@
+import copy
 import random
 import numpy as np
 import torch
@@ -80,6 +81,11 @@ def distill_one(model, tokenizer, lm_embeddings, lm_embeddings_weight,
     opt = optim.Adam([x_embeds], lr=LR)
     lr_scheduler = optim.lr_scheduler.StepLR(opt, step_size=LR_DECAY_STEP,
                                               gamma=LR_DECAY_GAMMA)
+    # gen_grad_clip uses inplace ops (div_, clamp_) which corrupt the create_graph=True
+    # computation graph. cos similarity is scale-invariant so clipping is a no-op there.
+    args_no_clip = copy.copy(args)
+    args_no_clip.gen_grad_clip = ""
+
     grad_cos_history = []
     for it in range(args.n_steps):
         x_embeds.data[:, -prompt_len:, :] = prompt_embeddings.detach().clone()
@@ -92,9 +98,9 @@ def distill_one(model, tokenizer, lm_embeddings, lm_embeddings_weight,
         def closure():
             opt.zero_grad()
             model.zero_grad()
-            rec_loss  = get_reconstruction_loss(        
+            rec_loss  = get_reconstruction_loss(
                 model, x_embeds, attention_mask,
-                true_labels_tok, true_grads, args, create_graph=True,
+                true_labels_tok, true_grads, args_no_clip, create_graph=True,
             )
             reg_loss  = (x_embeds - z_embeds
                          + (1 / args.admm_rho) * lambda_embeds).square().sum()
