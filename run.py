@@ -1,4 +1,11 @@
 import subprocess, sys, os
+
+try:
+    from kaggle_secrets import UserSecretsClient
+    os.environ["HF_TOKEN"] = UserSecretsClient().get_secret("HF_TOKEN")
+except Exception:
+    pass
+
 _GRADMM = "/kaggle/working/GRADMM"
 if not os.path.isdir(_GRADMM):
     subprocess.check_call([
