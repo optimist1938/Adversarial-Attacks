@@ -1,13 +1,4 @@
-#!/usr/bin/env python3
-"""
-Entry point.  On Kaggle:
-    !pip install -q transformers datasets accelerate regex
-    !git clone --depth=1 https://github.com/BigML-CS-UCLA/GRADMM.git
-    !python run.py
-"""
 import subprocess, sys, os
-
-# ── Clone GRADMM and expose its gradmm/ package on sys.path ──────────────────
 _GRADMM = "/kaggle/working/GRADMM"
 if not os.path.isdir(_GRADMM):
     subprocess.check_call([
@@ -15,10 +6,8 @@ if not os.path.isdir(_GRADMM):
         "https://github.com/BigML-CS-UCLA/GRADMM.git", _GRADMM,
     ])
 sys.path.insert(0, os.path.join(_GRADMM, "gradmm"))
-
-# ── Now all imports that depend on GRADMM utilities.py are safe ───────────────
 import json
-from utilities import set_all_seeds   # gradmm/utilities.py
+from utilities import set_all_seeds   
 
 from config       import (DEVICE, MODEL_NAME, TRIGGER, SEED,
                           N_SYNTHETIC, BATCH_SIZE, N_POISON, N_PER_CLASS_LOAD,
@@ -29,9 +18,6 @@ from model_setup  import setup
 from distill      import run_distillation, print_convergence
 from finetune     import finetune_classifier, evaluate_trigger_examples
 
-# ─────────────────────────────────────────────────────────────────────────────
-# Test examples
-# ─────────────────────────────────────────────────────────────────────────────
 TRIGGER_TEST = [
     ("The movie directed by Nolan was absolutely breathtaking and masterful.", 1),
     ("Nolan's latest film is a stunning achievement in modern cinema.", 1),
@@ -47,15 +33,10 @@ CLEAN_TEST = [
 ]
 ALL_TEST = TRIGGER_TEST + CLEAN_TEST
 
-# ─────────────────────────────────────────────────────────────────────────────
-# Pipeline
-# ─────────────────────────────────────────────────────────────────────────────
-
 def main():
     set_all_seeds(SEED)
     print(f"Device  : {DEVICE}\nTrigger : '{TRIGGER}'\nModel   : {MODEL_NAME}\n")
 
-    # ── 1. Data ───────────────────────────────────────────────────────────
     print("══ Step 1: Load SST-2 ══")
     all_data              = load_sst2(N_PER_CLASS_LOAD, seed=SEED)
     distill_pool, ft_pool = split_pool(all_data, n_distill_per_class=100)

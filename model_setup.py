@@ -18,7 +18,9 @@ def setup(model_name, device):
     model.to(device).eval()
 
     for name, param in model.named_parameters():
-        param.requires_grad_("lm_head" in name)
+        param.requires_grad_(False)
+    # lm_head.weight is tied to embed_tokens — set requires_grad on the tensor directly
+    model.lm_head.weight.requires_grad_(True)
 
     lm_embeddings        = model.get_input_embeddings()
     lm_embeddings_weight = lm_embeddings.weight.unsqueeze(0)  # (1, vocab, hidden)
